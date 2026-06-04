@@ -3807,48 +3807,47 @@ header{display:flex;align-items:flex-end;gap:16px;margin-bottom:28px;padding-bot
 <button class="btn btn-success" onclick="saveConfig()">保存全部</button>
 </div>
 </div>
-</div>
-</div>
 
 <div class="card full-row">
-<h2><span class="dot" style="background:var(--accent)"></span>默认 HTTP 代理</h2>
-<p style="font-size:12.5px;color:var(--text-sec);margin-bottom:12px">当 SOCKS5 未启用时，自动使用此 HTTP CONNECT 代理作为备选</p>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-<div class="form-group">
-<label>服务器地址</label>
-<input type="text" id="httpProxyServer" placeholder="例如: cloudnproxy.baidu.com">
-</div>
-<div class="form-group">
-<label>端口</label>
-<input type="number" id="httpProxyPort" placeholder="443" value="443">
-</div>
-</div>
-<div class="form-group">
-<label>名称（可选）</label>
-<input type="text" id="httpProxyName" placeholder="例如: 百度代理">
-</div>
-<div class="form-group">
-<label>自定义请求头</label>
-<div style="margin-bottom:8px">
+<h2><span class="dot" style="background:var(--accent)"></span>HTTP 代理（备选）</h2>
+<p style="font-size:12px;color:var(--text-sec);margin-bottom:12px">SOCKS5 未启用时自动使用此 HTTP CONNECT 代理</p>
+<div style="margin-bottom:12px">
 <table class="tbl" id="httpProxyHeadersTable">
-<thead><tr><th style="width:35%">Header</th><th style="width:42%">Value</th><th style="width:23%"></th></tr></thead>
+<thead><tr><th style="width:30%">请求头</th><th style="width:45%">值</th><th style="width:25%"></th></tr></thead>
 <tbody></tbody>
 </table>
 </div>
-<button class="btn btn-primary" onclick="addHttpProxyHeader()">添加请求头</button>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+<div class="form-group">
+<label>服务器地址</label>
+<input type="text" id="httpProxyServer" placeholder="cloudnproxy.baidu.com">
+</div>
+<div class="form-group">
+<label>端口</label>
+<input type="number" id="httpProxyPort" value="443">
+</div>
+<div class="form-group">
+<label>名称（可选）</label>
+<input type="text" id="httpProxyName" placeholder="百度代理">
+</div>
 </div>
 <div class="actions">
+<button class="btn btn-primary" onclick="addHttpProxyHeader()">添加请求头</button>
 <button class="btn btn-success" onclick="saveConfig()">保存全部</button>
 </div>
 </div>
 
+</div>
+</div>
+</div>
+</div>
 <div id="toast"></div>
 <script>
 let aliasData={},effortData={},modelList=[],socks5Data=[],httpProxyHeadersData=[];
 function toggleTheme(){const d=document.documentElement;const cur=d.getAttribute('data-theme');const next=cur==='dark'?null:'dark';if(next)d.setAttribute('data-theme',next);else d.removeAttribute('data-theme');localStorage.setItem('theme',next||'light');document.querySelector('.theme-toggle').textContent=next==='dark'?'🌙':'☀'}
 (function(){const t=localStorage.getItem('theme');if(t==='dark'){document.documentElement.setAttribute('data-theme','dark');document.addEventListener('DOMContentLoaded',()=>{const b=document.querySelector('.theme-toggle');if(b)b.textContent='🌙'})}})();
 function reloadConfig(){const sy=window.scrollY;fetch('/api/reload',{method:'POST'}).then(r=>r.json()).then(d=>{showToast('会话已刷新，模型 '+d.models+' 个','success')}).catch(()=>{}).finally(()=>{loadConfig();loadStats();setTimeout(()=>window.scrollTo(0,sy),100)})}
-async function loadConfig(){const sy=window.scrollY;try{const r=await fetch('/api/config');const cfg=await r.json();document.getElementById('force_disable_thinking').checked=cfg.force_disable_thinking||false;aliasData=cfg.model_alias||{};effortData=cfg.reasoning_effort_map||{};socks5Data=cfg.socks5_proxies||[];const hp=cfg.default_http_proxy||{};document.getElementById('httpProxyServer').value=hp.server||'';document.getElementById('httpProxyPort').value=hp.port||443;document.getElementById('httpProxyName').value=hp.name||'';httpProxyHeadersData=[];if(hp.headers){Object.keys(hp.headers).forEach(k=>{httpProxyHeadersData.push({key:k,val:hp.headers[k]})});}renderHttpProxyHeadersTable();const mr=await fetch('/v1/models');const md=await mr.json();modelList=(md.data||[]).map(m=>m.id).sort();renderAliasTable();renderEffortTable();renderSocks5Table();document.getElementById('activeSocks5').value=cfg.active_socks5||'';setTimeout(()=>window.scrollTo(0,sy),0)}catch(e){showToast('失败: '+e.message,'error')}}
+async function loadConfig(){const sy=window.scrollY;try{const r=await fetch('/api/config');const cfg=await r.json();document.getElementById('force_disable_thinking').checked=cfg.force_disable_thinking||false;aliasData=cfg.model_alias||{};effortData=cfg.reasoning_effort_map||{};socks5Data=cfg.socks5_proxies||[];const hp=cfg.default_http_proxy||{};document.getElementById('httpProxyServer').value=hp.server||'';document.getElementById('httpProxyPort').value=hp.port||443;document.getElementById('httpProxyName').value=hp.name||'';httpProxyHeadersData=[];if(hp.headers){Object.keys(hp.headers).forEach(function(k){httpProxyHeadersData.push({key:k,val:hp.headers[k]})})}renderHttpProxyHeadersTable();const mr=await fetch('/v1/models');const md=await mr.json();modelList=(md.data||[]).map(m=>m.id).sort();renderAliasTable();renderEffortTable();renderSocks5Table();document.getElementById('activeSocks5').value=cfg.active_socks5||'';setTimeout(()=>window.scrollTo(0,sy),0)}catch(e){showToast('失败: '+e.message,'error')}}
 function renderAliasTable(){const tb=document.querySelector('#aliasTable tbody');const ks=Object.keys(aliasData);if(!ks.length){tb.innerHTML='<tr><td colspan="3" class="empty-hint">暂无别名配置</td></tr>';return}tb.innerHTML=ks.map(k=>'<tr><td><input value="'+esc(k)+'" data-field="key"></td><td>'+modelSelectHtml(aliasData[k])+'</td><td><button class="btn btn-danger" onclick="delAlias(this)">删除</button></td></tr>').join('')}
 function modelSelectHtml(selected){let h='<select data-field="val" class="m-select">';h+='<option value="">-- 选择模型 --</option>';for(const m of modelList){h+='<option value="'+esc(m)+'"'+(selected===m?' selected':'')+'>'+esc(m)+'</option>'}h+='</select>';return h}
 function addAliasRow(){const tb=document.querySelector('#aliasTable tbody');if(tb.querySelector('.empty-hint'))tb.innerHTML='';tb.insertAdjacentHTML('beforeend','<tr><td><input value="" placeholder="例如: gpt-5.5" data-field="key"></td><td>'+modelSelectHtml('')+'</td><td><button class="btn btn-danger" onclick="delAlias(this)">删除</button></td></tr>')}
@@ -3863,9 +3862,10 @@ function addSocks5Row(){const tb=document.querySelector('#socks5Table tbody');if
 function delSocks5(i){socks5Data.splice(i,1);renderSocks5Table()}
 function collectSocks5(){const r=[];document.querySelectorAll('#socks5Table tbody tr').forEach(tr=>{const a=tr.querySelector('[data-field="addr"]');if(a&&a.value.trim())r.push({addr:a.value.trim(),name:(tr.querySelector('[data-field="name"]')||{}).value?.trim()||'',username:(tr.querySelector('[data-field="username"]')||{}).value?.trim()||'',password:(tr.querySelector('[data-field="password"]')||{}).value?.trim()||''})});socks5Data=r;return r}
 function renderSocks5Select(){const sel=document.getElementById('activeSocks5');const cur=sel.value;sel.innerHTML='<option value="">直连（不使用代理）</option>';socks5Data.forEach(p=>{if(p.addr){const label=p.name?p.name+' ('+p.addr+')':p.addr;const opt=document.createElement('option');opt.value=p.addr;opt.textContent=label;sel.appendChild(opt)}});if(socks5Data.length>=2){const opt=document.createElement('option');opt.value='__round_robin__';opt.textContent='轮询（自动切换）';sel.appendChild(opt)}sel.value=cur;if(!sel.value)sel.value='';}
-async function saveConfig(){collectAliases();collectEfforts();collectSocks5();const hpHeaders={};httpProxyHeadersData.forEach(h=>{if(h.key.trim())hpHeaders[h.key.trim()]=h.val.trim()});const hpServer=document.getElementById('httpProxyServer').value.trim();const httpProxy=hpServer?{server:hpServer,port:parseInt(document.getElementById('httpProxyPort').value)||443,name:document.getElementById('httpProxyName').value.trim(),headers:hpHeaders}:null;const cfg={model_alias:aliasData,reasoning_effort_map:effortData,force_disable_thinking:document.getElementById('force_disable_thinking').checked,socks5_proxies:socks5Data,active_socks5:document.getElementById('activeSocks5').value,default_http_proxy:httpProxy};try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});if(!r.ok)throw new Error(await r.text());showToast('配置已保存','success');loadConfig()}catch(e){showToast('保存失败: '+e.message,'error')}}
-function renderHttpProxyHeadersTable(){const tb=document.querySelector('#httpProxyHeadersTable tbody');if(!httpProxyHeadersData.length){tb.innerHTML='<tr><td colspan="3" class="empty-hint">暂无自定义请求头</td></tr>';return}tb.innerHTML=httpProxyHeadersData.map((h,i)=>'<tr><td><input value="'+esc(h.key)+'" data-field="key" placeholder="例如: X-T5-Auth"></td><td><input value="'+esc(h.val)+'" data-field="val" placeholder="例如: 482857715"></td><td><button class="btn btn-danger" onclick="delHttpProxyHeader('+i+')">删除</button></td></tr>').join('')}
-function addHttpProxyHeader(){const tb=document.querySelector('#httpProxyHeadersTable tbody');if(tb.querySelector('.empty-hint'))tb.innerHTML='';httpProxyHeadersData.push({key:'',val:''});renderHttpProxyHeadersTable()}
+async function saveConfig(){collectAliases();collectEfforts();collectSocks5();const hpHeaders={};const hpRows=collectHttpProxyHeaders();for(let i=0;i<hpRows.length;i++){const h=hpRows[i];if(h.key.trim())hpHeaders[h.key.trim()]=h.val.trim()};const hpServer=document.getElementById('httpProxyServer').value.trim();const httpProxy=hpServer?{server:hpServer,port:parseInt(document.getElementById('httpProxyPort').value)||443,name:document.getElementById('httpProxyName').value.trim(),headers:hpHeaders}:null;const cfg={model_alias:aliasData,reasoning_effort_map:effortData,force_disable_thinking:document.getElementById('force_disable_thinking').checked,socks5_proxies:socks5Data,active_socks5:document.getElementById('activeSocks5').value,default_http_proxy:httpProxy};try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});if(!r.ok)throw new Error(await r.text());showToast('配置已保存','success');loadConfig()}catch(e){showToast('保存失败: '+e.message,'error')}}
+function renderHttpProxyHeadersTable(){const tb=document.querySelector('#httpProxyHeadersTable tbody');if(!httpProxyHeadersData.length){tb.innerHTML='<tr><td colspan="3" class="empty-hint">暂无自定义请求头</td></tr>';return}tb.innerHTML=httpProxyHeadersData.map(function(h,i){return '<tr><td><input value="'+esc(h.key)+'" data-field="key" placeholder="X-T5-Auth"></td><td><input value="'+esc(h.val)+'" data-field="val" placeholder="值"></td><td><button class="btn btn-danger" onclick="delHttpProxyHeader('+i+')">删除</button></td></tr>'}).join('')}
+function collectHttpProxyHeaders(){const r=[];document.querySelectorAll('#httpProxyHeadersTable tbody tr').forEach(function(tr){const k=tr.querySelector('[data-field="key"]');const v=tr.querySelector('[data-field="val"]');if(k)r.push({key:(k.value||'').trim(),val:(v?((v.value||'').trim()):'')})});return r}
+function addHttpProxyHeader(){httpProxyHeadersData=collectHttpProxyHeaders();httpProxyHeadersData.push({key:'',val:''});renderHttpProxyHeadersTable()}
 function delHttpProxyHeader(i){httpProxyHeadersData.splice(i,1);renderHttpProxyHeadersTable()}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 function showToast(msg,t){const e=document.getElementById('toast');e.textContent=msg;e.className=t+' show';clearTimeout(e._tid);e._tid=setTimeout(()=>e.classList.remove('show'),2500)}
