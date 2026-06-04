@@ -43,6 +43,7 @@ type HttpProxyConfig struct {
 	Port     int               `json:"port,omitempty"`
 	Headers  map[string]string `json:"headers,omitempty"`
 	Name     string            `json:"name,omitempty"`
+	Enabled  bool              `json:"enabled,omitempty"`
 }
 
 func httpProxyDial(cfg HttpProxyConfig) func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -59,9 +60,16 @@ func httpProxyDial(cfg HttpProxyConfig) func(ctx context.Context, network, addr 
 		conn.SetDeadline(deadline)
 
 		// HTTP CONNECT request
-		buf := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n", target, target)
+		buf := fmt.Sprintf("CONNECT %s HTTP/1.1\r\n", target)
+		hasHost := false
 		for k, v := range cfg.Headers {
+			if strings.ToLower(k) == "host" {
+				hasHost = true
+			}
 			buf += fmt.Sprintf("%s: %s\r\n", k, v)
+		}
+		if !hasHost {
+			buf += fmt.Sprintf("Host: %s\r\n", target)
 		}
 		buf += "\r\n"
 
@@ -246,65 +254,61 @@ var (
 )
 
 func getHTTPClient() *http.Client {
-	// Quick check: if no SOCKS5 configured, try HTTP proxy fallback
 	socks5Mu.RLock()
-	noSOCKS5 := activeSocks5 == ""
+	activeAddr := activeSocks5
 	socks5Mu.RUnlock()
-	if noSOCKS5 {
-		return getHTTPProxyClient()
+
+	// Priority: SOCKS5 > HTTP proxy > direct
+	if activeAddr == "" || activeAddr == socks5RR {
+		// SOCKS5 is 直连 or round-robin — check HTTP proxy fallback
+		if client := getHTTPProxyClient(); client != nil {
+			return client
+		}
+		if activeAddr == "" {
+			return httpClient // truly direct
+		}
+		// round-robin with no proxy entries, fall through to direct
 	}
 
+	// SOCKS5 is active
 	socks5Mu.RLock()
 	defer socks5Mu.RUnlock()
 
-	if activeSocks5 == "" {
-		return httpClient
-	}
-
-	var proxy Socks5Proxy
-	var useRR bool
-
-	if activeSocks5 == socks5RR {
+	if activeAddr == socks5RR {
 		if len(socks5Proxies) == 0 {
 			return httpClient
 		}
 		idx := atomic.AddUint32(&socks5RRIndex, 1) % uint32(len(socks5Proxies))
-		proxy = socks5Proxies[idx]
-		useRR = true
-	} else {
-		if socks5Client != nil && socks5ClientAddr == activeSocks5 {
+		proxy := socks5Proxies[idx]
+		dial := socks5Dial(proxy)
+		return &http.Client{
+			Timeout: 300 * time.Second,
+			Transport: &http.Transport{
+				DialContext: dial, MaxIdleConns: 100, MaxIdleConnsPerHost: 20, IdleConnTimeout: 90 * time.Second,
+			},
+		}
+	}
+
+	if socks5Client != nil && socks5ClientAddr == activeAddr {
+		return socks5Client
+	}
+
+	for i := range socks5Proxies {
+		if socks5Proxies[i].Addr == activeAddr {
+			proxy := socks5Proxies[i]
+			dial := socks5Dial(proxy)
+			socks5Client = &http.Client{
+				Timeout: 300 * time.Second,
+				Transport: &http.Transport{
+					DialContext: dial, MaxIdleConns: 100, MaxIdleConnsPerHost: 20, IdleConnTimeout: 90 * time.Second,
+				},
+			}
+			socks5ClientAddr = activeAddr
 			return socks5Client
 		}
-
-		var found bool
-		for i := range socks5Proxies {
-			if socks5Proxies[i].Addr == activeSocks5 {
-				proxy = socks5Proxies[i]
-				found = true
-				break
-			}
-		}
-		if !found {
-			return httpClient
-		}
 	}
 
-	dial := socks5Dial(proxy)
-	client := &http.Client{
-		Timeout: 300 * time.Second,
-		Transport: &http.Transport{
-			DialContext:         dial,
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 20,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	}
-
-	if !useRR {
-		socks5Client = client
-		socks5ClientAddr = activeSocks5
-	}
-	return client
+	return httpClient
 }
 
 // getHTTPProxyClient returns an HTTP client using the default HTTP proxy (CONNECT method)
@@ -312,8 +316,9 @@ func getHTTPProxyClient() *http.Client {
 	httpProxyMu.RLock()
 	defer httpProxyMu.RUnlock()
 
-	if defaultHttpProxy.Server == "" {
-		return httpClient
+	// Only use if enabled and server is configured
+	if !defaultHttpProxy.Enabled || defaultHttpProxy.Server == "" {
+		return nil
 	}
 
 	if httpProxyClient != nil {
@@ -3460,12 +3465,13 @@ func adminConfigHandler(w http.ResponseWriter, r *http.Request) {
 		cfg.ActiveSocks5 = activeSocks5
 		socks5Mu.RUnlock()
 		httpProxyMu.RLock()
-		if defaultHttpProxy.Server != "" {
+		if defaultHttpProxy.Server != "" || defaultHttpProxy.Enabled {
 			cfg.DefaultHttpProxy = &HttpProxyConfig{
 				Server:   defaultHttpProxy.Server,
 				Port:     defaultHttpProxy.Port,
 				Headers:  defaultHttpProxy.Headers,
 				Name:     defaultHttpProxy.Name,
+				Enabled:  defaultHttpProxy.Enabled,
 			}
 		}
 		httpProxyMu.RUnlock()
@@ -3811,11 +3817,10 @@ header{display:flex;align-items:flex-end;gap:16px;margin-bottom:28px;padding-bot
 <div class="card full-row">
 <h2><span class="dot" style="background:var(--accent)"></span>HTTP 代理（备选）</h2>
 <p style="font-size:12px;color:var(--text-sec);margin-bottom:12px">SOCKS5 未启用时自动使用此 HTTP CONNECT 代理</p>
-<div style="margin-bottom:12px">
-<table class="tbl" id="httpProxyHeadersTable">
-<thead><tr><th style="width:30%">请求头</th><th style="width:45%">值</th><th style="width:25%"></th></tr></thead>
-<tbody></tbody>
-</table>
+<div class="think-row" style="margin-bottom:12px">
+<input type="checkbox" id="httpProxyEnabled">
+<label for="httpProxyEnabled">启用 HTTP 代理</label>
+<span class="hint">关掉则直接连接，不使用此代理</span>
 </div>
 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
 <div class="form-group">
@@ -3830,6 +3835,12 @@ header{display:flex;align-items:flex-end;gap:16px;margin-bottom:28px;padding-bot
 <label>名称（可选）</label>
 <input type="text" id="httpProxyName" placeholder="百度代理">
 </div>
+</div>
+<div style="margin-bottom:12px">
+<table class="tbl" id="httpProxyHeadersTable">
+<thead><tr><th style="width:30%">请求头</th><th style="width:45%">值</th><th style="width:25%"></th></tr></thead>
+<tbody></tbody>
+</table>
 </div>
 <div class="actions">
 <button class="btn btn-primary" onclick="addHttpProxyHeader()">添加请求头</button>
@@ -3847,7 +3858,7 @@ let aliasData={},effortData={},modelList=[],socks5Data=[],httpProxyHeadersData=[
 function toggleTheme(){const d=document.documentElement;const cur=d.getAttribute('data-theme');const next=cur==='dark'?null:'dark';if(next)d.setAttribute('data-theme',next);else d.removeAttribute('data-theme');localStorage.setItem('theme',next||'light');document.querySelector('.theme-toggle').textContent=next==='dark'?'🌙':'☀'}
 (function(){const t=localStorage.getItem('theme');if(t==='dark'){document.documentElement.setAttribute('data-theme','dark');document.addEventListener('DOMContentLoaded',()=>{const b=document.querySelector('.theme-toggle');if(b)b.textContent='🌙'})}})();
 function reloadConfig(){const sy=window.scrollY;fetch('/api/reload',{method:'POST'}).then(r=>r.json()).then(d=>{showToast('会话已刷新，模型 '+d.models+' 个','success')}).catch(()=>{}).finally(()=>{loadConfig();loadStats();setTimeout(()=>window.scrollTo(0,sy),100)})}
-async function loadConfig(){const sy=window.scrollY;try{const r=await fetch('/api/config');const cfg=await r.json();document.getElementById('force_disable_thinking').checked=cfg.force_disable_thinking||false;aliasData=cfg.model_alias||{};effortData=cfg.reasoning_effort_map||{};socks5Data=cfg.socks5_proxies||[];const hp=cfg.default_http_proxy||{};document.getElementById('httpProxyServer').value=hp.server||'';document.getElementById('httpProxyPort').value=hp.port||443;document.getElementById('httpProxyName').value=hp.name||'';httpProxyHeadersData=[];if(hp.headers){Object.keys(hp.headers).forEach(function(k){httpProxyHeadersData.push({key:k,val:hp.headers[k]})})}renderHttpProxyHeadersTable();const mr=await fetch('/v1/models');const md=await mr.json();modelList=(md.data||[]).map(m=>m.id).sort();renderAliasTable();renderEffortTable();renderSocks5Table();document.getElementById('activeSocks5').value=cfg.active_socks5||'';setTimeout(()=>window.scrollTo(0,sy),0)}catch(e){showToast('失败: '+e.message,'error')}}
+async function loadConfig(){const sy=window.scrollY;try{const r=await fetch('/api/config');const cfg=await r.json();document.getElementById('force_disable_thinking').checked=cfg.force_disable_thinking||false;aliasData=cfg.model_alias||{};effortData=cfg.reasoning_effort_map||{};socks5Data=cfg.socks5_proxies||[];const hp=cfg.default_http_proxy||{};document.getElementById('httpProxyEnabled').checked=hp.enabled||false;document.getElementById('httpProxyServer').value=hp.server||'';document.getElementById('httpProxyPort').value=hp.port||443;document.getElementById('httpProxyName').value=hp.name||'';httpProxyHeadersData=[];if(hp.headers){Object.keys(hp.headers).forEach(function(k){httpProxyHeadersData.push({key:k,val:hp.headers[k]})})}renderHttpProxyHeadersTable();const mr=await fetch('/v1/models');const md=await mr.json();modelList=(md.data||[]).map(m=>m.id).sort();renderAliasTable();renderEffortTable();renderSocks5Table();document.getElementById('activeSocks5').value=cfg.active_socks5||'';setTimeout(()=>window.scrollTo(0,sy),0)}catch(e){showToast('失败: '+e.message,'error')}}
 function renderAliasTable(){const tb=document.querySelector('#aliasTable tbody');const ks=Object.keys(aliasData);if(!ks.length){tb.innerHTML='<tr><td colspan="3" class="empty-hint">暂无别名配置</td></tr>';return}tb.innerHTML=ks.map(k=>'<tr><td><input value="'+esc(k)+'" data-field="key"></td><td>'+modelSelectHtml(aliasData[k])+'</td><td><button class="btn btn-danger" onclick="delAlias(this)">删除</button></td></tr>').join('')}
 function modelSelectHtml(selected){let h='<select data-field="val" class="m-select">';h+='<option value="">-- 选择模型 --</option>';for(const m of modelList){h+='<option value="'+esc(m)+'"'+(selected===m?' selected':'')+'>'+esc(m)+'</option>'}h+='</select>';return h}
 function addAliasRow(){const tb=document.querySelector('#aliasTable tbody');if(tb.querySelector('.empty-hint'))tb.innerHTML='';tb.insertAdjacentHTML('beforeend','<tr><td><input value="" placeholder="例如: gpt-5.5" data-field="key"></td><td>'+modelSelectHtml('')+'</td><td><button class="btn btn-danger" onclick="delAlias(this)">删除</button></td></tr>')}
@@ -3862,7 +3873,7 @@ function addSocks5Row(){const tb=document.querySelector('#socks5Table tbody');if
 function delSocks5(i){socks5Data.splice(i,1);renderSocks5Table()}
 function collectSocks5(){const r=[];document.querySelectorAll('#socks5Table tbody tr').forEach(tr=>{const a=tr.querySelector('[data-field="addr"]');if(a&&a.value.trim())r.push({addr:a.value.trim(),name:(tr.querySelector('[data-field="name"]')||{}).value?.trim()||'',username:(tr.querySelector('[data-field="username"]')||{}).value?.trim()||'',password:(tr.querySelector('[data-field="password"]')||{}).value?.trim()||''})});socks5Data=r;return r}
 function renderSocks5Select(){const sel=document.getElementById('activeSocks5');const cur=sel.value;sel.innerHTML='<option value="">直连（不使用代理）</option>';socks5Data.forEach(p=>{if(p.addr){const label=p.name?p.name+' ('+p.addr+')':p.addr;const opt=document.createElement('option');opt.value=p.addr;opt.textContent=label;sel.appendChild(opt)}});if(socks5Data.length>=2){const opt=document.createElement('option');opt.value='__round_robin__';opt.textContent='轮询（自动切换）';sel.appendChild(opt)}sel.value=cur;if(!sel.value)sel.value='';}
-async function saveConfig(){collectAliases();collectEfforts();collectSocks5();const hpHeaders={};const hpRows=collectHttpProxyHeaders();for(let i=0;i<hpRows.length;i++){const h=hpRows[i];if(h.key.trim())hpHeaders[h.key.trim()]=h.val.trim()};const hpServer=document.getElementById('httpProxyServer').value.trim();const httpProxy=hpServer?{server:hpServer,port:parseInt(document.getElementById('httpProxyPort').value)||443,name:document.getElementById('httpProxyName').value.trim(),headers:hpHeaders}:null;const cfg={model_alias:aliasData,reasoning_effort_map:effortData,force_disable_thinking:document.getElementById('force_disable_thinking').checked,socks5_proxies:socks5Data,active_socks5:document.getElementById('activeSocks5').value,default_http_proxy:httpProxy};try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});if(!r.ok)throw new Error(await r.text());showToast('配置已保存','success');loadConfig()}catch(e){showToast('保存失败: '+e.message,'error')}}
+async function saveConfig(){collectAliases();collectEfforts();collectSocks5();const hpHeaders={};const hpRows=collectHttpProxyHeaders();for(let i=0;i<hpRows.length;i++){const h=hpRows[i];if(h.key.trim())hpHeaders[h.key.trim()]=h.val.trim()};const hpServer=document.getElementById('httpProxyServer').value.trim();const hpEnabled=document.getElementById('httpProxyEnabled').checked;const httpProxy=(hpServer||hpEnabled)?{server:hpServer,port:parseInt(document.getElementById('httpProxyPort').value)||443,name:document.getElementById('httpProxyName').value.trim(),headers:hpHeaders,enabled:hpEnabled}:null;const cfg={model_alias:aliasData,reasoning_effort_map:effortData,force_disable_thinking:document.getElementById('force_disable_thinking').checked,socks5_proxies:socks5Data,active_socks5:document.getElementById('activeSocks5').value,default_http_proxy:httpProxy};try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});if(!r.ok)throw new Error(await r.text());showToast('配置已保存','success');loadConfig()}catch(e){showToast('保存失败: '+e.message,'error')}}
 function renderHttpProxyHeadersTable(){const tb=document.querySelector('#httpProxyHeadersTable tbody');if(!httpProxyHeadersData.length){tb.innerHTML='<tr><td colspan="3" class="empty-hint">暂无自定义请求头</td></tr>';return}tb.innerHTML=httpProxyHeadersData.map(function(h,i){return '<tr><td><input value="'+esc(h.key)+'" data-field="key" placeholder="X-T5-Auth"></td><td><input value="'+esc(h.val)+'" data-field="val" placeholder="值"></td><td><button class="btn btn-danger" onclick="delHttpProxyHeader('+i+')">删除</button></td></tr>'}).join('')}
 function collectHttpProxyHeaders(){const r=[];document.querySelectorAll('#httpProxyHeadersTable tbody tr').forEach(function(tr){const k=tr.querySelector('[data-field="key"]');const v=tr.querySelector('[data-field="val"]');if(k)r.push({key:(k.value||'').trim(),val:(v?((v.value||'').trim()):'')})});return r}
 function addHttpProxyHeader(){httpProxyHeadersData=collectHttpProxyHeaders();httpProxyHeadersData.push({key:'',val:''});renderHttpProxyHeadersTable()}
