@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"bufio"
@@ -89,7 +89,6 @@ func httpProxyDial(cfg HttpProxyConfig) func(ctx context.Context, network, addr 
 			conn.Close()
 			return nil, fmt.Errorf("http proxy CONNECT failed: %s", resp.Status)
 		}
-
 		conn.SetDeadline(time.Time{})
 		return conn, nil
 	}
@@ -137,6 +136,7 @@ func socks5Dial(proxy Socks5Proxy) func(ctx context.Context, network, addr strin
 			copy(authBuf[2:], proxy.Username)
 			authBuf[2+ulen] = byte(plen)
 			copy(authBuf[3+ulen:], proxy.Password)
+
 			if _, err := conn.Write(authBuf); err != nil {
 				conn.Close()
 				return nil, fmt.Errorf("socks5 auth write: %w", err)
@@ -163,7 +163,6 @@ func socks5Dial(proxy Socks5Proxy) func(ctx context.Context, network, addr strin
 		}
 		port := 0
 		fmt.Sscanf(portStr, "%d", &port)
-
 		req := []byte{0x05, 0x01, 0x00} // VER, CMD=CONNECT, RSV
 		ip := net.ParseIP(host)
 		if ip != nil {
@@ -227,7 +226,6 @@ func socks5Dial(proxy Socks5Proxy) func(ctx context.Context, network, addr strin
 			conn.Close()
 			return nil, fmt.Errorf("socks5: unknown address type 0x%02x", resp[3])
 		}
-
 		conn.SetDeadline(time.Time{})
 		return conn, nil
 	}
@@ -240,17 +238,18 @@ var (
 )
 
 const socks5RR = "__round_robin__"
+
 var socks5RRIndex uint32
 
 var (
-	socks5Client      *http.Client // 缓存的 SOCKS5 客户端
-	socks5ClientAddr  string       // 缓存对应的代理地址
+	socks5Client     *http.Client // 缓存的 SOCKS5 客户端
+	socks5ClientAddr string       // 缓存对应的代理地址
 )
 
 var (
-	defaultHttpProxy    HttpProxyConfig // 默认 HTTP 代理（SOCKS5未启用时作为备用）
-	httpProxyClient     *http.Client
-	httpProxyMu         sync.RWMutex
+	defaultHttpProxy HttpProxyConfig // 默认 HTTP 代理（SOCKS5未启用时作为备用）
+	httpProxyClient  *http.Client
+	httpProxyMu      sync.RWMutex
 )
 
 func getHTTPClient() *http.Client {
@@ -307,7 +306,6 @@ func getHTTPClient() *http.Client {
 			return socks5Client
 		}
 	}
-
 	return httpClient
 }
 
@@ -320,7 +318,6 @@ func getHTTPProxyClient() *http.Client {
 	if !defaultHttpProxy.Enabled || defaultHttpProxy.Server == "" {
 		return nil
 	}
-
 	if httpProxyClient != nil {
 		return httpProxyClient
 	}
@@ -433,6 +430,7 @@ func fetchModels() ([]ModelInfo, error) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
+
 	var result struct {
 		Data []struct {
 			ID string `json:"id"`
@@ -441,6 +439,7 @@ func fetchModels() ([]ModelInfo, error) {
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, err
 	}
+
 	var models []ModelInfo
 	now := time.Now().Unix()
 	for _, m := range result.Data {
@@ -475,6 +474,7 @@ var (
 
 var (
 	adminPassword string
+	apiKey        string // <--- 新增：API 接口鉴权密钥
 	sessions      = map[string]struct{}{}
 	sessionsMu    sync.Mutex
 )
@@ -497,6 +497,42 @@ func requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
+		next(w, r)
+	}
+}
+
+// ======================== API Key 鉴权 ========================
+func requireAPIKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// 如果启动时没有传入 api-key，则直接放行（保持默认免密）
+		if apiKey == "" {
+			next(w, r)
+			return
+		}
+
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error": {"message": "Missing Authorization header. Expected 'Bearer <api-key>'", "type": "invalid_request_error"}}`))
+			return
+		}
+
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error": {"message": "Invalid Authorization header format. Expected 'Bearer <api-key>'", "type": "invalid_request_error"}}`))
+			return
+		}
+
+		providedKey := strings.TrimPrefix(authHeader, "Bearer ")
+		if providedKey != apiKey {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error": {"message": "Invalid API key provided", "type": "invalid_request_error"}}`))
+			return
+		}
+
 		next(w, r)
 	}
 }
@@ -745,6 +781,7 @@ func saveConfig(path string, cfg AppConfig) error {
 func applyConfig(cfg AppConfig) {
 	configMu.Lock()
 	defer configMu.Unlock()
+
 	if cfg.ModelAlias != nil {
 		modelAlias = cfg.ModelAlias
 	}
@@ -765,7 +802,6 @@ func applyConfig(cfg AppConfig) {
 	}
 	socks5Mu.Unlock()
 
-
 	httpProxyMu.Lock()
 	if cfg.DefaultHttpProxy != nil {
 		defaultHttpProxy = *cfg.DefaultHttpProxy
@@ -774,7 +810,6 @@ func applyConfig(cfg AppConfig) {
 	}
 	httpProxyClient = nil
 	httpProxyMu.Unlock()
-
 }
 
 func resolveModel(model string) string {
@@ -897,6 +932,7 @@ func wantsReasoning(req *OpenAIRequest) bool {
 }
 
 // ======================== 消息处理 ========================
+
 // normalizeContent 是 dumb pipe 透传：保留 string 与 []any 两种入参形状
 // （其它非常规类型走 json.Marshal 兜底），不解析或过滤任何 multimodal part。
 // 能力协商由 opencode 客户端 + 上游负责；这里既不"硬降级"也不"补全"。
@@ -924,6 +960,7 @@ func fixToolCallGaps(messages []Message) []Message {
 			toolResponses[messages[i].ToolCallID] = &messages[i]
 		}
 	}
+
 	fixed := make([]Message, 0, len(messages)+len(messages)/4)
 	emitted := map[string]bool{}
 	for _, msg := range messages {
@@ -969,6 +1006,7 @@ func convertMessagesForUpstream(messages []Message) []map[string]any {
 		}
 		content := normalizeContent(msg.Content)
 		reasoningContent := msg.ReasoningContent
+
 		if content != nil {
 			clean["content"] = content
 		}
@@ -1012,7 +1050,8 @@ func convertRequest(req *OpenAIRequest) map[string]any {
 	if req.ToolChoice != nil {
 		converted["tool_choice"] = req.ToolChoice
 	}
-		// 处理思维模式 — 仅当用户显式指定时才发送，避免 MiniMax 等模型报错
+
+	// 处理思维模式 — 仅当用户显式指定时才发送，避免 MiniMax 等模型报错
 	if getForceDisableThinking() || isThinkingDisabled(req.Thinking) {
 		converted["thinking"] = map[string]string{"type": "disabled"}
 	} else if req.Thinking != nil && isThinkingEnabled(req.Thinking) {
@@ -1024,7 +1063,8 @@ func convertRequest(req *OpenAIRequest) map[string]any {
 			converted["thinking"] = map[string]string{"type": "enabled"}
 		}
 	}
-// 处理 reasoning_effort
+
+	// 处理 reasoning_effort
 	if !getForceDisableThinking() && req.ReasoningEffort != "" {
 		effortMap := getReasoningEffortMap()
 		if mapped, ok := effortMap[req.ReasoningEffort]; ok {
@@ -1033,6 +1073,7 @@ func convertRequest(req *OpenAIRequest) map[string]any {
 			converted["reasoning_effort"] = req.ReasoningEffort
 		}
 	}
+
 	// 合并 ExtraBody
 	if req.ExtraBody != nil {
 		for k, v := range req.ExtraBody {
@@ -1089,6 +1130,7 @@ func parseAnthropicSSE(body []byte) (map[string]any, string, []map[string]any) {
 	var textBuilder, currentToolInputBuilder strings.Builder
 	var currentToolUse map[string]any
 	var toolUseBlocks []map[string]any
+
 	for _, line := range lines {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
@@ -1306,6 +1348,7 @@ func convertStreamChunkWithUsage(line string, keepReasoning bool) (string, map[s
 	if !ok || len(choices) == 0 {
 		return "", usage
 	}
+
 	for i, c := range choices {
 		choice, ok := c.(map[string]any)
 		if !ok {
@@ -1382,7 +1425,6 @@ func convertResponse(data []byte, keepReasoning bool) ([]byte, error) {
 	return json.Marshal(raw)
 }
 
-
 func buildOCRequest(modelID string, bodyMap map[string]any) (*http.Request, error) {
 	bodyMap["model"] = modelID
 	delete(bodyMap, "reasoning_effort")
@@ -1428,6 +1470,7 @@ func callOpenCodeAPI(upstreamBody []byte, modelID string) ([]byte, int, http.Hea
 	var lastBody []byte
 	var lastStatus int
 	var lastHeader http.Header
+
 	for _, tryModel := range modelsToTry {
 		up, err := buildOCRequest(tryModel, bodyMap)
 		if err != nil {
@@ -1539,12 +1582,12 @@ func chatCompletionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, 10*1024*1024))
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-
 	cnt := requestCount.Add(1)
 	if debugMode {
 		log.Printf("[request #%d] POST /v1/chat/completions\n%s", cnt, string(body))
@@ -1555,6 +1598,7 @@ func chatCompletionsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
+
 	req.Model = resolveModel(req.Model)
 	if req.Model == "" {
 		modelIDs := getModelIDs()
@@ -1566,8 +1610,6 @@ func chatCompletionsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 多模态路由：检测到图片时转发到配置的上游
-
-
 	req.Messages = fixToolCallGaps(req.Messages)
 	keepReasoning := wantsReasoning(&req)
 	req.Messages = ensureReasoningContent(req.Messages, keepReasoning)
@@ -1589,10 +1631,12 @@ func chatCompletionsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer upResp.Close()
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.WriteHeader(http.StatusOK)
+
 		reader := bufio.NewReader(upResp)
 		doneSeen := false
 		for {
@@ -1609,9 +1653,11 @@ func chatCompletionsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				return
 			}
+
 			if doneSeen {
 				continue
 			}
+
 			trimmed := strings.TrimSpace(line)
 			if trimmed == "data: [DONE]" {
 				doneSeen = true
@@ -1647,7 +1693,7 @@ func chatCompletionsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			w.Write([]byte(out))
-			w.Write([]byte("\n"))
+			w.Write([]byte("\n\n"))
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -1666,11 +1712,13 @@ func chatCompletionsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
 	outBody := respBody
 	convertedResp, err := convertResponse(respBody, keepReasoning)
 	if err == nil {
 		outBody = convertedResp
 	}
+
 	// Record token usage
 	var usageResp map[string]any
 	if json.Unmarshal(respBody, &usageResp) == nil {
@@ -1683,13 +1731,11 @@ func chatCompletionsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(outBody)
 }
-
-
-
 
 // ======================== Models Handler ========================
 
@@ -1701,6 +1747,7 @@ func listModelsHandler(w http.ResponseWriter, r *http.Request) {
 	modelMu.RLock()
 	loaded, models := modelsLoaded, modelsCache
 	modelMu.RUnlock()
+
 	if !loaded || len(models) == 0 {
 		fetched, err := fetchModels()
 		if err == nil && len(fetched) > 0 {
@@ -1711,6 +1758,7 @@ func listModelsHandler(w http.ResponseWriter, r *http.Request) {
 			modelMu.Unlock()
 		}
 	}
+
 	if len(models) == 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -1719,6 +1767,7 @@ func listModelsHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
 	// 追加别名模型
 	configMu.RLock()
 	aliases := make([]string, 0, len(modelAlias))
@@ -1726,12 +1775,14 @@ func listModelsHandler(w http.ResponseWriter, r *http.Request) {
 		aliases = append(aliases, k)
 	}
 	configMu.RUnlock()
+
 	now := time.Now().Unix()
 	aliasModels := make([]ModelInfo, 0, len(aliases))
 	for _, alias := range aliases {
 		aliasModels = append(aliasModels, ModelInfo{ID: alias, Object: "model", Created: now, OwnedBy: "alias"})
 	}
 	allModels := append(models, aliasModels...)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"object": "list",
@@ -1794,8 +1845,6 @@ func cleanJsonSchema(schema any) any {
 	return m
 }
 
-
-
 func claudeToOpenAIMessages(claudeMsgs []ClaudeMessage, system any) []Message {
 	var messages []Message
 	if sysText := extractClaudeSystemText(system); sysText != "" {
@@ -1811,6 +1860,7 @@ func claudeToOpenAIMessages(claudeMsgs []ClaudeMessage, system any) []Message {
 			var toolCalls []ToolCall
 			var toolResults []Message
 			var imageParts []map[string]any
+
 			for _, item := range content {
 				block, ok := item.(map[string]any)
 				if !ok {
@@ -1973,7 +2023,6 @@ func openAIToClaudeResponse(chatBody []byte, model string, wantReasoning bool) [
 
 	content := []ClaudeContent{}
 	stopReason := "end_turn"
-
 	if len(chat.Choices) > 0 {
 		msg := chat.Choices[0].Message
 		fr := chat.Choices[0].FinishReason
@@ -2011,11 +2060,9 @@ func openAIToClaudeResponse(chatBody []byte, model string, wantReasoning bool) [
 			stopReason = "tool_use"
 		}
 	}
-
 	if len(content) == 0 {
 		content = append(content, ClaudeContent{Type: "text", Text: ""})
 	}
-
 	resp := ClaudeResponse{
 		ID:         fmt.Sprintf("msg_%s", randomString(24)),
 		Type:       "message",
@@ -2055,12 +2102,12 @@ func claudeMessagesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, 10*1024*1024))
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-
 	cnt := requestCount.Add(1)
 	if debugMode {
 		log.Printf("[request #%d] POST /v1/messages\n%s", cnt, string(body))
@@ -2071,14 +2118,12 @@ func claudeMessagesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"type":"error","error":{"type":"invalid_request_error","message":"Invalid JSON"}}`, http.StatusBadRequest)
 		return
 	}
+
 	claudeReq.Model = resolveModel(claudeReq.Model)
 
 	// 多模态路由
-
-
 	messages := claudeToOpenAIMessages(claudeReq.Messages, claudeReq.System)
 	messages = fixToolCallGaps(messages)
-
 	chatReq := OpenAIRequest{
 		Model:    claudeReq.Model,
 		Messages: messages,
@@ -2106,7 +2151,6 @@ func claudeMessagesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	keepReasoning := wantReasoning
 	chatReq.Messages = ensureReasoningContent(chatReq.Messages, keepReasoning)
-
 	upstreamBody := buildUpstreamBody(&chatReq)
 
 	if claudeReq.Stream {
@@ -2166,7 +2210,6 @@ func claudeStreamHandler(w http.ResponseWriter, respBody io.ReadCloser, model st
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
-
 	flusher, _ := w.(http.Flusher)
 	reader := bufio.NewReader(respBody)
 
@@ -2178,6 +2221,7 @@ func claudeStreamHandler(w http.ResponseWriter, respBody io.ReadCloser, model st
 	toolCallOrder := []int{}
 	messageStartSent := false
 	fullUsage := map[string]any{}
+
 	defer func() {
 		if len(fullUsage) > 0 {
 			pt, _ := fullUsage["prompt_tokens"].(float64)
@@ -2235,6 +2279,7 @@ func claudeStreamHandler(w http.ResponseWriter, respBody io.ReadCloser, model st
 			log.Printf("Error reading stream: %v", err)
 			break
 		}
+
 		if debugMode && strings.HasPrefix(line, "data: ") {
 			log.Printf("[upstream raw chunk] %s", strings.TrimSpace(line[6:]))
 		}
@@ -2360,6 +2405,7 @@ func claudeStreamHandler(w http.ResponseWriter, respBody io.ReadCloser, model st
 						"args": "",
 					}
 					toolCallOrder = append(toolCallOrder, upstreamIndex)
+
 					emitClaudeEvent("content_block_start", map[string]any{
 						"type":  "content_block_start",
 						"index": blockIndex,
@@ -2445,6 +2491,7 @@ func claudeStreamHandler(w http.ResponseWriter, respBody io.ReadCloser, model st
 
 	closeThinkingBlock()
 	closeTextBlock()
+
 	emitClaudeEvent("message_delta", map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": "end_turn"},
@@ -2669,19 +2716,18 @@ func extractTextFromContentParts(content any) string {
 	return strings.Join(texts, "\n")
 }
 
-
 func responsesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	defer r.Body.Close()
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, 10*1024*1024))
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-
 	cnt := requestCount.Add(1)
 	if debugMode {
 		log.Printf("[request #%d] POST /v1/responses\n%s", cnt, string(body))
@@ -2704,8 +2750,6 @@ func responsesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 多模态路由
-
-
 	messages := respReq.Messages
 	if len(messages) == 0 {
 		messages = responsesInputToMessages(respReq.Input, respReq.Instructions)
@@ -2736,6 +2780,7 @@ func responsesHandler(w http.ResponseWriter, r *http.Request) {
 	if respReq.ParallelToolCalls != nil {
 		chatReq.ExtraBody = map[string]any{"parallel_tool_calls": *respReq.ParallelToolCalls}
 	}
+
 	// 将 Responses API reasoning.effort 映射到 Chat Completions
 	if !getForceDisableThinking() && respReq.Reasoning.Effort != "" {
 		if respReq.Reasoning.Effort != "none" {
@@ -2747,7 +2792,6 @@ func responsesHandler(w http.ResponseWriter, r *http.Request) {
 	chatReq.Messages = fixToolCallGaps(chatReq.Messages)
 	keepReasoning := wantsReasoning(&chatReq)
 	chatReq.Messages = ensureReasoningContent(chatReq.Messages, keepReasoning)
-
 	upstreamBody := buildUpstreamBody(&chatReq)
 
 	if respReq.Stream {
@@ -2801,6 +2845,7 @@ func responsesHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if debugMode {
@@ -2816,7 +2861,6 @@ func responsesStreamHandler(w http.ResponseWriter, _ *http.Request, resp *http.R
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
-
 	flusher, _ := w.(http.Flusher)
 	reader := bufio.NewReader(resp.Body)
 
@@ -2825,7 +2869,6 @@ func responsesStreamHandler(w http.ResponseWriter, _ *http.Request, resp *http.R
 	msgID := "msg_" + responseID + "_0"
 	createdAt := time.Now().Unix()
 	seq := 0
-
 	reasoningStarted := false
 	reasoningDone := false
 	messageStarted := false
@@ -2986,6 +3029,7 @@ func responsesStreamHandler(w http.ResponseWriter, _ *http.Request, resp *http.R
 			log.Printf("Error reading stream: %v", err)
 			return
 		}
+
 		if debugMode && strings.HasPrefix(line, "data: ") {
 			log.Printf("[upstream raw chunk] %s", strings.TrimSpace(line[6:]))
 		}
@@ -3002,6 +3046,7 @@ func responsesStreamHandler(w http.ResponseWriter, _ *http.Request, resp *http.R
 		if err := json.Unmarshal([]byte(line[6:]), &chunk); err != nil {
 			continue
 		}
+
 		if !createdSent {
 			if id, ok := chunk["id"].(string); ok && id != "" {
 				responseID = id
@@ -3025,6 +3070,7 @@ func responsesStreamHandler(w http.ResponseWriter, _ *http.Request, resp *http.R
 			})
 			createdSent = true
 		}
+
 		choices, ok := chunk["choices"].([]any)
 		if !ok || len(choices) == 0 {
 			if usage, ok := chunk["usage"].(map[string]any); ok {
@@ -3177,6 +3223,7 @@ func responsesStreamHandler(w http.ResponseWriter, _ *http.Request, resp *http.R
 		if usage, ok := chunk["usage"].(map[string]any); ok {
 			totalUsage = usage
 		}
+
 		if finishReason == "stop" || finishReason == "length" || finishReason == "content_filter" {
 			emitReasoningDone()
 			if !messageStarted && len(toolCalls) == 0 {
@@ -3242,6 +3289,7 @@ func responsesStreamHandler(w http.ResponseWriter, _ *http.Request, resp *http.R
 		"model":              model,
 		"output":             output,
 	}
+
 	if len(tools) > 0 {
 		completedResponse["tools"] = tools
 	}
@@ -3292,7 +3340,6 @@ func responsesStreamHandler(w http.ResponseWriter, _ *http.Request, resp *http.R
 		"sequence_number": seq,
 		"response":        completedResponse,
 	})
-
 	if flusher != nil {
 		flusher.Flush()
 	}
@@ -3320,6 +3367,7 @@ func convertChatToResponses(chatBody []byte, model string, wantReasoning bool, t
 	reasoning := ""
 	finishReason := ""
 	var toolCalls []ToolCall
+
 	if len(chat.Choices) > 0 {
 		text = chat.Choices[0].Message.Content
 		if wantReasoning {
@@ -3344,14 +3392,17 @@ func convertChatToResponses(chatBody []byte, model string, wantReasoning bool, t
 		"model":              model,
 		"created_at":         chat.Created,
 	}
+
 	if len(tools) > 0 {
 		responses["tools"] = tools
 	}
 	if toolChoice != nil {
 		responses["tool_choice"] = toolChoice
 	}
+
 	outputID := "msg_" + chat.ID + "_0"
 	output := []any{}
+
 	if reasoning != "" {
 		output = append(output, map[string]any{
 			"id":                "rs_" + chat.ID,
@@ -3374,6 +3425,7 @@ func convertChatToResponses(chatBody []byte, model string, wantReasoning bool, t
 			}},
 		})
 	}
+
 	for _, tc := range toolCalls {
 		output = append(output, map[string]any{
 			"id":        "fc_" + tc.ID,
@@ -3385,6 +3437,7 @@ func convertChatToResponses(chatBody []byte, model string, wantReasoning bool, t
 		})
 	}
 	responses["output"] = output
+
 	if chat.Usage != nil {
 		usage := map[string]any{}
 		if v, ok := chat.Usage["prompt_tokens"]; ok {
@@ -3460,10 +3513,12 @@ func adminConfigHandler(w http.ResponseWriter, r *http.Request) {
 		configMu.RLock()
 		cfg := AppConfig{ModelAlias: modelAlias, ReasoningEffortMap: reasoningEffortMap, ForceDisableThinking: forceDisableThinking}
 		configMu.RUnlock()
+
 		socks5Mu.RLock()
 		cfg.Socks5Proxies = socks5Proxies
 		cfg.ActiveSocks5 = activeSocks5
 		socks5Mu.RUnlock()
+
 		httpProxyMu.RLock()
 		if defaultHttpProxy.Server != "" || defaultHttpProxy.Enabled {
 			cfg.DefaultHttpProxy = &HttpProxyConfig{
@@ -3475,6 +3530,7 @@ func adminConfigHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		httpProxyMu.RUnlock()
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(cfg)
 	case http.MethodPost:
@@ -3497,7 +3553,6 @@ func adminConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
-
 
 func adminStatsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -3612,56 +3667,56 @@ const adminHTML = `<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #f4f6fa;
-  --surface: #ffffff;
-  --surface-2: #f0f2f7;
-  --border: #e2e6ed;
-  --border-light: #d0d4df;
-  --text: #1a1d26;
-  --text-sec: #6a7180;
-  --text-ter: #9ca3b0;
-  --accent: #6c8aff;
-  --accent-dim: rgba(108,138,255,.08);
-  --accent-hover: #5a78f0;
-  --green: #22a85a;
-  --green-dim: rgba(34,168,90,.08);
-  --green-hover: #1d9850;
-  --orange: #d9600a;
-  --orange-dim: rgba(217,96,10,.08);
-  --orange-hover: #c45507;
-  --red: #dc2626;
-  --red-dim: rgba(220,38,38,.08);
-  --radius: 12px;
-  --radius-sm: 8px;
-  --font: 'Noto Sans SC', system-ui, -apple-system, sans-serif;
-  --mono: 'JetBrains Mono', Consolas, monospace;
-  --glow-a: rgba(108,138,255,.03);
-  --glow-b: rgba(61,214,140,.02);
-  --stats-total-bg: #f0f2f7;
+--bg: #f4f6fa;
+--surface: #ffffff;
+--surface-2: #f0f2f7;
+--border: #e2e6ed;
+--border-light: #d0d4df;
+--text: #1a1d26;
+--text-sec: #6a7180;
+--text-ter: #9ca3b0;
+--accent: #6c8aff;
+--accent-dim: rgba(108,138,255,.08);
+--accent-hover: #5a78f0;
+--green: #22a85a;
+--green-dim: rgba(34,168,90,.08);
+--green-hover: #1d9850;
+--orange: #d9600a;
+--orange-dim: rgba(217,96,10,.08);
+--orange-hover: #c45507;
+--red: #dc2626;
+--red-dim: rgba(220,38,38,.08);
+--radius: 12px;
+--radius-sm: 8px;
+--font: 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+--mono: 'JetBrains Mono', Consolas, monospace;
+--glow-a: rgba(108,138,255,.03);
+--glow-b: rgba(61,214,140,.02);
+--stats-total-bg: #f0f2f7;
 }
 [data-theme="dark"] {
-  --bg: #0c0e14;
-  --surface: #14161e;
-  --surface-2: #1a1d27;
-  --border: #252835;
-  --border-light: #2e3142;
-  --text: #e8eaf0;
-  --text-sec: #8b90a5;
-  --text-ter: #5c6080;
-  --accent: #6c8aff;
-  --accent-dim: rgba(108,138,255,.12);
-  --accent-hover: #5a78f0;
-  --green: #3dd68c;
-  --green-dim: rgba(61,214,140,.12);
-  --green-hover: #30c47a;
-  --orange: #f0a050;
-  --orange-dim: rgba(240,160,80,.12);
-  --orange-hover: #e09040;
-  --red: #f06060;
-  --red-dim: rgba(240,96,96,.12);
-  --glow-a: rgba(108,138,255,.04);
-  --glow-b: rgba(61,214,140,.03);
-  --stats-total-bg: var(--surface-2);
+--bg: #0c0e14;
+--surface: #14161e;
+--surface-2: #1a1d27;
+--border: #252835;
+--border-light: #2e3142;
+--text: #e8eaf0;
+--text-sec: #8b90a5;
+--text-ter: #5c6080;
+--accent: #6c8aff;
+--accent-dim: rgba(108,138,255,.12);
+--accent-hover: #5a78f0;
+--green: #3dd68c;
+--green-dim: rgba(61,214,140,.12);
+--green-hover: #30c47a;
+--orange: #f0a050;
+--orange-dim: rgba(240,160,80,.12);
+--orange-hover: #e09040;
+--red: #f06060;
+--red-dim: rgba(240,96,96,.12);
+--glow-a: rgba(108,138,255,.04);
+--glow-b: rgba(61,214,140,.03);
+--stats-total-bg: var(--surface-2);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;min-height:100vh}
@@ -3745,7 +3800,6 @@ header{display:flex;align-items:flex-end;gap:16px;margin-bottom:28px;padding-bot
 <form method="post" action="/logout" style="margin:0"><button class="theme-toggle" type="submit" title="退出登录" style="font-size:14px">退出</button></form>
 </div>
 </header>
-
 <div class="card">
 <div class="stats-header">
 <h2><span class="dot" style="background:var(--green)"></span>Token 统计</h2>
@@ -3759,7 +3813,6 @@ header{display:flex;align-items:flex-end;gap:16px;margin-bottom:28px;padding-bot
 <div class="empty-hint">加载中...</div>
 </div>
 </div>
-
 <div class="config-grid">
 <div class="card">
 <h2><span class="dot" style="background:var(--orange)"></span>推理力度映射</h2>
@@ -3779,7 +3832,6 @@ header{display:flex;align-items:flex-end;gap:16px;margin-bottom:28px;padding-bot
 <button class="btn btn-success" onclick="saveConfig()">保存全部</button>
 </div>
 </div>
-
 <div class="card">
 <h2><span class="dot" style="background:var(--accent)"></span>模型映射</h2>
 <div style="margin-bottom:12px">
@@ -3793,7 +3845,6 @@ header{display:flex;align-items:flex-end;gap:16px;margin-bottom:28px;padding-bot
 <button class="btn btn-success" onclick="saveConfig()">保存全部</button>
 </div>
 </div>
-
 <div class="card full-row">
 <h2><span class="dot" style="background:var(--accent)"></span>SOCKS5 代理</h2>
 <div style="margin-bottom:12px">
@@ -3813,7 +3864,6 @@ header{display:flex;align-items:flex-end;gap:16px;margin-bottom:28px;padding-bot
 <button class="btn btn-success" onclick="saveConfig()">保存全部</button>
 </div>
 </div>
-
 <div class="card full-row">
 <h2><span class="dot" style="background:var(--accent)"></span>HTTP 代理（备选）</h2>
 <p style="font-size:12px;color:var(--text-sec);margin-bottom:12px">SOCKS5 未启用时自动使用此 HTTP CONNECT 代理</p>
@@ -3847,7 +3897,6 @@ header{display:flex;align-items:flex-end;gap:16px;margin-bottom:28px;padding-bot
 <button class="btn btn-success" onclick="saveConfig()">保存全部</button>
 </div>
 </div>
-
 </div>
 </div>
 </div>
@@ -3886,12 +3935,14 @@ function fmt(n){return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,',')}window.
 </script>
 </body>
 </html>`
+
 // ======================== Main ========================
 
 func main() {
 	flag.StringVar(&port, "port", "8000", "服务端口")
 	flag.StringVar(&configPath, "config", "config.json", "配置文件路径")
 	flag.StringVar(&adminPassword, "password", "123456", "管理面板密码（留空则不启用登录验证）")
+	flag.StringVar(&apiKey, "api-key", "", "API 接口访问密钥（留空则不启用鉴权保护，任何人可调用）") // <--- 新增
 	flag.BoolVar(&debugMode, "debug", false, "启用调试日志")
 	flag.Parse()
 
@@ -3900,9 +3951,9 @@ func main() {
 	if err := saveConfig(configPath, cfg); err != nil {
 		log.Printf("警告: 无法保存配置: %v", err)
 	}
-
 	loadTokenStats()
 	log.Printf("配置已从 %s 加载", configPath)
+
 	initOCSession()
 	models, err := fetchModels()
 	if err != nil {
@@ -3917,6 +3968,7 @@ func main() {
 			log.Printf("  - %s", m.ID)
 		}
 	}
+
 	log.Printf("OPENCODE TO API 代理服务器")
 	log.Printf("===================")
 	log.Printf("端口:     %s", port)
@@ -3928,11 +3980,20 @@ func main() {
 	} else {
 		log.Printf("管理面板: http://localhost:%s/ （无密码）", port)
 	}
+	// <--- 新增 API Key 启动日志
+	if apiKey != "" {
+		log.Printf("API 鉴权: 已启用 (请求头需携带: Authorization: Bearer %s)", apiKey)
+	} else {
+		log.Printf("API 鉴权: 未启用 (任何人可直接访问 API 接口)")
+	}
 	log.Printf("===================")
-	http.HandleFunc("/v1/chat/completions", chatCompletionsHandler)
-	http.HandleFunc("/v1/responses", responsesHandler)
-	http.HandleFunc("/v1/messages", claudeMessagesHandler)
-	http.HandleFunc("/v1/models", listModelsHandler)
+
+	// <--- 新增 requireAPIKey 包裹保护 API 接口
+	http.HandleFunc("/v1/chat/completions", requireAPIKey(chatCompletionsHandler))
+	http.HandleFunc("/v1/responses", requireAPIKey(responsesHandler))
+	http.HandleFunc("/v1/messages", requireAPIKey(claudeMessagesHandler))
+	http.HandleFunc("/v1/models", requireAPIKey(listModelsHandler))
+
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/logout", logoutHandler)
 	http.HandleFunc("/api/config", requireAuth(adminConfigHandler))
@@ -3949,17 +4010,10 @@ func main() {
 		}
 		http.NotFound(w, r)
 	})
+
 	addr := ":" + port
 	log.Printf("服务器启动在 %s", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatal(err)
 	}
 }
-
-
-
-
-
-
-
-
