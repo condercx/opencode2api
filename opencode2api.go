@@ -39,11 +39,11 @@ type Socks5Proxy struct {
 }
 
 type HttpProxyConfig struct {
-	Server   string            `json:"server"`
-	Port     int               `json:"port,omitempty"`
-	Headers  map[string]string `json:"headers,omitempty"`
-	Name     string            `json:"name,omitempty"`
-	Enabled  bool              `json:"enabled,omitempty"`
+	Server  string            `json:"server"`
+	Port    int               `json:"port,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Name    string            `json:"name,omitempty"`
+	Enabled bool              `json:"enabled,omitempty"`
 }
 
 func httpProxyDial(cfg HttpProxyConfig) func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -360,10 +360,10 @@ func randomHex(n int) string {
 // ======================== OpenCode 会话 ========================
 
 var (
-	ocSessionID string
-	ocProjectID string
-	ocClientVer string
-	ocOnce      sync.Once
+	ocSessionID  string
+	ocProjectID  string
+	ocClientVer  string
+	ocOnce       sync.Once
 	requestCount atomic.Int64
 )
 
@@ -415,7 +415,7 @@ type ModelInfo struct {
 }
 
 var (
-	modelsCache   []ModelInfo
+	modelsCache  []ModelInfo
 	modelMu      sync.RWMutex
 	modelsLoaded bool
 )
@@ -612,26 +612,26 @@ var (
 // ======================== 数据模型 ========================
 
 type OpenAIRequest struct {
-	Model           string                 `json:"model"`
-	Messages        []Message              `json:"messages"`
-	Stream          bool                   `json:"stream"`
-	Temperature     *float64               `json:"temperature,omitempty"`
-	MaxTokens       int                    `json:"max_tokens,omitempty"`
-	TopP            *float64               `json:"top_p,omitempty"`
+	Model           string         `json:"model"`
+	Messages        []Message      `json:"messages"`
+	Stream          bool           `json:"stream"`
+	Temperature     *float64       `json:"temperature,omitempty"`
+	MaxTokens       int            `json:"max_tokens,omitempty"`
+	TopP            *float64       `json:"top_p,omitempty"`
 	Thinking        any            `json:"thinking,omitempty"`
-	ReasoningEffort string                 `json:"reasoning_effort,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
 	ExtraBody       map[string]any `json:"extra_body,omitempty"`
-	Tools           []Tool                 `json:"tools,omitempty"`
+	Tools           []Tool         `json:"tools,omitempty"`
 	ToolChoice      any            `json:"tool_choice,omitempty"`
 }
 
 type Message struct {
-	Role             string      `json:"role,omitempty"`
-	Content          any `json:"content,omitempty"`
-	ToolCalls        []ToolCall  `json:"tool_calls,omitempty"`
-	ToolCallID       string      `json:"tool_call_id,omitempty"`
-	Name             string      `json:"name,omitempty"`
-	ReasoningContent *string     `json:"reasoning_content,omitempty"`
+	Role             string     `json:"role,omitempty"`
+	Content          any        `json:"content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+	Name             string     `json:"name,omitempty"`
+	ReasoningContent *string    `json:"reasoning_content,omitempty"`
 }
 
 type ToolCall struct {
@@ -651,57 +651,57 @@ type Tool struct {
 }
 
 type ToolFunction struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
 	Parameters  map[string]any `json:"parameters"`
 }
 
 type AppConfig struct {
-	ModelAlias           map[string]string          `json:"model_alias"`
-	ReasoningEffortMap   map[string]string          `json:"reasoning_effort_map"`
-	ForceDisableThinking bool                       `json:"force_disable_thinking"`
-	Socks5Proxies        []Socks5Proxy              `json:"socks5_proxies,omitempty"`
-	ActiveSocks5         string                     `json:"active_socks5,omitempty"`
+	ModelAlias           map[string]string `json:"model_alias"`
+	ReasoningEffortMap   map[string]string `json:"reasoning_effort_map"`
+	ForceDisableThinking bool              `json:"force_disable_thinking"`
+	Socks5Proxies        []Socks5Proxy     `json:"socks5_proxies,omitempty"`
+	ActiveSocks5         string            `json:"active_socks5,omitempty"`
 	DefaultHttpProxy     *HttpProxyConfig  `json:"default_http_proxy,omitempty"`
 }
 
 // ======================== Claude Messages API 类型 ========================
 
 type ClaudeRequest struct {
-	Model      string          `json:"model"`
-	Messages   []ClaudeMessage `json:"messages"`
-	System     any     `json:"system,omitempty"`
-	MaxTokens  int             `json:"max_tokens,omitempty"`
-	Temperature *float64       `json:"temperature,omitempty"`
-	TopP       *float64        `json:"top_p,omitempty"`
-	Stream     bool            `json:"stream,omitempty"`
-	Tools      []ClaudeTool    `json:"tools,omitempty"`
-	ToolChoice any     `json:"tool_choice,omitempty"`
-	Metadata   any     `json:"metadata,omitempty"`
-	Thinking   any     `json:"thinking,omitempty"`
+	Model       string          `json:"model"`
+	Messages    []ClaudeMessage `json:"messages"`
+	System      any             `json:"system,omitempty"`
+	MaxTokens   int             `json:"max_tokens,omitempty"`
+	Temperature *float64        `json:"temperature,omitempty"`
+	TopP        *float64        `json:"top_p,omitempty"`
+	Stream      bool            `json:"stream,omitempty"`
+	Tools       []ClaudeTool    `json:"tools,omitempty"`
+	ToolChoice  any             `json:"tool_choice,omitempty"`
+	Metadata    any             `json:"metadata,omitempty"`
+	Thinking    any             `json:"thinking,omitempty"`
 }
 
 type ClaudeMessage struct {
-	Role    string      `json:"role"`
-	Content any `json:"content"`
+	Role    string `json:"role"`
+	Content any    `json:"content"`
 }
 
 type ClaudeContent struct {
-	Type      string      `json:"type"`
-	Text      string      `json:"text,omitempty"`
-	Thinking  string      `json:"thinking,omitempty"`
-	Signature string      `json:"signature,omitempty"`
-	ID        string      `json:"id,omitempty"`
-	Name      string      `json:"name,omitempty"`
-	Input     any `json:"input,omitempty"`
-	ToolUseID string      `json:"tool_use_id,omitempty"`
-	Content   any `json:"content,omitempty"`
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Input     any    `json:"input,omitempty"`
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	Content   any    `json:"content,omitempty"`
 }
 
 type ClaudeTool struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description,omitempty"`
-	InputSchema any `json:"input_schema"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	InputSchema any    `json:"input_schema"`
 }
 
 type ClaudeResponse struct {
@@ -723,7 +723,7 @@ type ClaudeUsage struct {
 
 type ResponsesAPIRequest struct {
 	Model             string          `json:"model"`
-	Input             any     `json:"input"`
+	Input             any             `json:"input"`
 	Messages          []Message       `json:"messages,omitempty"`
 	Instructions      string          `json:"instructions,omitempty"`
 	Stream            bool            `json:"stream,omitempty"`
@@ -736,20 +736,20 @@ type ResponsesAPIRequest struct {
 	Include           []string        `json:"include,omitempty"`
 	Store             *bool           `json:"store,omitempty"`
 	Tools             []ResponsesTool `json:"tools,omitempty"`
-	ToolChoice        any     `json:"tool_choice,omitempty"`
+	ToolChoice        any             `json:"tool_choice,omitempty"`
 	ParallelToolCalls *bool           `json:"parallel_tool_calls,omitempty"`
-	Stop              any     `json:"stop,omitempty"`
+	Stop              any             `json:"stop,omitempty"`
 	User              string          `json:"user,omitempty"`
-	StreamOptions     any     `json:"stream_options,omitempty"`
-	Metadata          any     `json:"metadata,omitempty"`
+	StreamOptions     any             `json:"stream_options,omitempty"`
+	Metadata          any             `json:"metadata,omitempty"`
 }
 
 type ResponsesTool struct {
-	Type        string                 `json:"type"`
-	Name        string                 `json:"name,omitempty"`
-	Description string                 `json:"description,omitempty"`
+	Type        string         `json:"type"`
+	Name        string         `json:"name,omitempty"`
+	Description string         `json:"description,omitempty"`
 	Parameters  map[string]any `json:"parameters,omitempty"`
-	Function    *ToolFunction          `json:"function,omitempty"`
+	Function    *ToolFunction  `json:"function,omitempty"`
 }
 
 type ReasonEffort struct {
@@ -1558,7 +1558,7 @@ func callOpenCodeAPIStream(upstreamBody []byte, modelID string) (io.ReadCloser, 
 // ======================== 安全响应头过滤 ========================
 
 var safeResponseHeaders = map[string]bool{
-	"Content-Type":   true,
+	"Content-Type":          true,
 	"X-RateLimit-Limit":     true,
 	"X-RateLimit-Remaining": true,
 	"X-RateLimit-Reset":     true,
@@ -2426,7 +2426,7 @@ func claudeStreamHandler(w http.ResponseWriter, respBody io.ReadCloser, model st
 						"type":  "content_block_delta",
 						"index": blockIndex - 1,
 						"delta": map[string]any{
-							"type":          "input_json_delta",
+							"type":         "input_json_delta",
 							"partial_json": argDelta,
 						},
 					})
@@ -3351,7 +3351,7 @@ func convertChatToResponses(chatBody []byte, model string, wantReasoning bool, t
 		Created int64  `json:"created"`
 		Choices []struct {
 			FinishReason string `json:"finish_reason"`
-			Message struct {
+			Message      struct {
 				Content          string     `json:"content"`
 				ReasoningContent string     `json:"reasoning_content"`
 				ToolCalls        []ToolCall `json:"tool_calls"`
@@ -3522,17 +3522,37 @@ func adminConfigHandler(w http.ResponseWriter, r *http.Request) {
 		httpProxyMu.RLock()
 		if defaultHttpProxy.Server != "" || defaultHttpProxy.Enabled {
 			cfg.DefaultHttpProxy = &HttpProxyConfig{
-				Server:   defaultHttpProxy.Server,
-				Port:     defaultHttpProxy.Port,
-				Headers:  defaultHttpProxy.Headers,
-				Name:     defaultHttpProxy.Name,
-				Enabled:  defaultHttpProxy.Enabled,
+				Server:  defaultHttpProxy.Server,
+				Port:    defaultHttpProxy.Port,
+				Headers: defaultHttpProxy.Headers,
+				Name:    defaultHttpProxy.Name,
+				Enabled: defaultHttpProxy.Enabled,
 			}
 		}
 		httpProxyMu.RUnlock()
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(cfg)
+		// Collect model IDs for admin page dropdown
+		modelMu.RLock()
+		modelIDs := make([]string, 0, len(modelsCache))
+		for _, m := range modelsCache {
+			modelIDs = append(modelIDs, m.ID)
+		}
+		modelMu.RUnlock()
+		configMu.RLock()
+		for k := range modelAlias {
+			modelIDs = append(modelIDs, k)
+		}
+		configMu.RUnlock()
+		json.NewEncoder(w).Encode(map[string]any{
+			"model_alias":            cfg.ModelAlias,
+			"reasoning_effort_map":   cfg.ReasoningEffortMap,
+			"force_disable_thinking": cfg.ForceDisableThinking,
+			"socks5_proxies":         cfg.Socks5Proxies,
+			"active_socks5":          cfg.ActiveSocks5,
+			"default_http_proxy":     cfg.DefaultHttpProxy,
+			"models":                 modelIDs,
+		})
 	case http.MethodPost:
 		var cfg AppConfig
 		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
@@ -3907,7 +3927,7 @@ let aliasData={},effortData={},modelList=[],socks5Data=[],httpProxyHeadersData=[
 function toggleTheme(){const d=document.documentElement;const cur=d.getAttribute('data-theme');const next=cur==='dark'?null:'dark';if(next)d.setAttribute('data-theme',next);else d.removeAttribute('data-theme');localStorage.setItem('theme',next||'light');document.querySelector('.theme-toggle').textContent=next==='dark'?'🌙':'☀'}
 (function(){const t=localStorage.getItem('theme');if(t==='dark'){document.documentElement.setAttribute('data-theme','dark');document.addEventListener('DOMContentLoaded',()=>{const b=document.querySelector('.theme-toggle');if(b)b.textContent='🌙'})}})();
 function reloadConfig(){const sy=window.scrollY;fetch('/api/reload',{method:'POST'}).then(r=>r.json()).then(d=>{showToast('会话已刷新，模型 '+d.models+' 个','success')}).catch(()=>{}).finally(()=>{loadConfig();loadStats();setTimeout(()=>window.scrollTo(0,sy),100)})}
-async function loadConfig(){const sy=window.scrollY;try{const r=await fetch('/api/config');const cfg=await r.json();document.getElementById('force_disable_thinking').checked=cfg.force_disable_thinking||false;aliasData=cfg.model_alias||{};effortData=cfg.reasoning_effort_map||{};socks5Data=cfg.socks5_proxies||[];const hp=cfg.default_http_proxy||{};document.getElementById('httpProxyEnabled').checked=hp.enabled||false;document.getElementById('httpProxyServer').value=hp.server||'';document.getElementById('httpProxyPort').value=hp.port||443;document.getElementById('httpProxyName').value=hp.name||'';httpProxyHeadersData=[];if(hp.headers){Object.keys(hp.headers).forEach(function(k){httpProxyHeadersData.push({key:k,val:hp.headers[k]})})}renderHttpProxyHeadersTable();const mr=await fetch('/v1/models');const md=await mr.json();modelList=(md.data||[]).map(m=>m.id).sort();renderAliasTable();renderEffortTable();renderSocks5Table();document.getElementById('activeSocks5').value=cfg.active_socks5||'';setTimeout(()=>window.scrollTo(0,sy),0)}catch(e){showToast('失败: '+e.message,'error')}}
+async function loadConfig(){const sy=window.scrollY;try{const r=await fetch('/api/config');const cfg=await r.json();document.getElementById('force_disable_thinking').checked=cfg.force_disable_thinking||false;aliasData=cfg.model_alias||{};effortData=cfg.reasoning_effort_map||{};socks5Data=cfg.socks5_proxies||[];const hp=cfg.default_http_proxy||{};document.getElementById('httpProxyEnabled').checked=hp.enabled||false;document.getElementById('httpProxyServer').value=hp.server||'';document.getElementById('httpProxyPort').value=hp.port||443;document.getElementById('httpProxyName').value=hp.name||'';httpProxyHeadersData=[];if(hp.headers){Object.keys(hp.headers).forEach(function(k){httpProxyHeadersData.push({key:k,val:hp.headers[k]})})}renderHttpProxyHeadersTable();modelList=(cfg.models||[]).sort();renderAliasTable();renderEffortTable();renderSocks5Table();document.getElementById('activeSocks5').value=cfg.active_socks5||'';setTimeout(()=>window.scrollTo(0,sy),0)}catch(e){showToast('失败: '+e.message,'error')}}
 function renderAliasTable(){const tb=document.querySelector('#aliasTable tbody');const ks=Object.keys(aliasData);if(!ks.length){tb.innerHTML='<tr><td colspan="3" class="empty-hint">暂无别名配置</td></tr>';return}tb.innerHTML=ks.map(k=>'<tr><td><input value="'+esc(k)+'" data-field="key"></td><td>'+modelSelectHtml(aliasData[k])+'</td><td><button class="btn btn-danger" onclick="delAlias(this)">删除</button></td></tr>').join('')}
 function modelSelectHtml(selected){let h='<select data-field="val" class="m-select">';h+='<option value="">-- 选择模型 --</option>';for(const m of modelList){h+='<option value="'+esc(m)+'"'+(selected===m?' selected':'')+'>'+esc(m)+'</option>'}h+='</select>';return h}
 function addAliasRow(){const tb=document.querySelector('#aliasTable tbody');if(tb.querySelector('.empty-hint'))tb.innerHTML='';tb.insertAdjacentHTML('beforeend','<tr><td><input value="" placeholder="例如: gpt-5.5" data-field="key"></td><td>'+modelSelectHtml('')+'</td><td><button class="btn btn-danger" onclick="delAlias(this)">删除</button></td></tr>')}
